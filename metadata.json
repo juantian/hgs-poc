@@ -1,0 +1,7 @@
+{
+  "itemDisplayName": "HGS For Shielded VM in Windows Server 2016",
+  "description": "This template allows you to Deploy 3-node Host Guardian Service For Shielded VM in Windows Server 2016.",
+  "summary": "Host Guardian Service in Windows Server 2016",
+  "githubUsername": "juantian",
+  "dateUpdated": "2016-11-28"
+}
