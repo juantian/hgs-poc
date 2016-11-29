@@ -374,7 +374,7 @@
         },
         "resources": [
           {
-            "name": "DSCInit",
+            "name": "[concat('DSCInit', copyIndex())]",
             "type": "extensions",
             "location": "[resourceGroup().location]",
             "apiVersion": "2015-06-15",
@@ -382,7 +382,7 @@
               "[resourceId('Microsoft.Compute/virtualMachines', concat(variables('vmNamePrefix'), copyindex()))]"
             ],
             "tags": {
-              "displayName": "DSCInit"
+              "displayName": "[concat('DSCInit', copyIndex())]"
             },
             "properties": {
               "publisher": "Microsoft.Compute",
