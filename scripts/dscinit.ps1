@@ -158,68 +158,44 @@ Configuration xHGS
 
                SetScript = {
                      write-verbose "Initializing HgsServer : $($using:Node.HgsDomainName)";
-                     if(!(Get-PSDrive -Name AD -ErrorAction SilentlyContinue)){ New-PSDrive -Name AD -PSProvider ActiveDirectory -Root //RootDSE/ }
+
+                     if(!(Get-PSDrive -Name AD -ErrorAction SilentlyContinue)){ New-PSDrive -Name AD -PSProvider ActiveDirectory -Root //RootDSE/ }                 
+                     
+                     $_HttpsCertificatePassword = ConvertTo-SecureString -AsPlainText "$($using:Node.HttpsCertificatePassword)" –Force
+                     $_EncryptionCertificatePassword = ConvertTo-SecureString -AsPlainText "$($using:Node.EncryptionCertificatePassword)" –Force
+                     $_SigningCertificatePassword = ConvertTo-SecureString -AsPlainText "$($using:Node.SigningCertificatePassword)" –Force
+
                      if([boolean]::Parse("$($using:Node.GenerateSelfSignedCertificate)"))
                      {
+                        ### Generate self signed certificate and export to given path
                         $_Httpscertname = "$($using:Node.HttpsCertificateName)"
                         $_encryptioncertname = "$($using:Node.EncryptionCertificateName)"
                         $_signingcertname = "$($using:Node.SigningCertificateName)"
-                        if ( (Get-ChildItem  Cert:\LocalMachine\My | where {$_.Subject -eq ('CN=' + $_Httpscertname )}) -eq $null)
+                        if ( (Get-ChildItem  Cert:\LocalMachine\root | where {$_.Subject -eq ('CN=' + $_Httpscertname )}) -eq $null)
                         {
                             Write-verbose "Generating Certificate "
-                            $_HttpsCertificatePassword = ConvertTo-SecureString -AsPlainText "$($using:Node.HttpsCertificatePassword)" –Force
-                            $HttpsCert = New-SelfSignedCertificate -DnsName $_Httpscertname -CertStoreLocation Cert:\LocalMachine\My
+                            $HttpsCert = New-SelfSignedCertificate -DnsName $_Httpscertname -CertStoreLocation Cert:\LocalMachine\my
                             Export-PfxCertificate -Cert $HttpsCert -Password $_HttpsCertificatePassword -FilePath "$($using:Node.HttpsCertificatePath)" 
+                            $HttpsCert = Import-PfxCertificate -CertStoreLocation Cert:\LocalMachine\Root -FilePath "$($using:Node.HttpsCertificatePath)" -Password $_HttpsCertificatePassword
                         }
 
-                        if ( (Get-ChildItem  Cert:\LocalMachine\My | where {$_.Subject -eq ('CN=' + $_encryptioncertname )}) -eq $null)
-                        {
-                            $_EncryptionCertificatePassword = ConvertTo-SecureString -AsPlainText "$($using:Node.EncryptionCertificatePassword)" –Force
-                            $encryptionCert = New-SelfSignedCertificate -DnsName $_encryptioncertname -CertStoreLocation Cert:\LocalMachine\My
+                        if ( (Get-ChildItem  Cert:\LocalMachine\my | where {$_.Subject -eq ('CN=' + $_encryptioncertname )}) -eq $null)
+                        {                            
+                            $encryptionCert = New-SelfSignedCertificate -DnsName $_encryptioncertname -CertStoreLocation Cert:\LocalMachine\my
                             Export-PfxCertificate -Cert $encryptionCert -Password $_EncryptionCertificatePassword -FilePath "$($using:Node.EncryptionCertificatePath)"
                         }
 
-                        if ( (Get-ChildItem  Cert:\LocalMachine\My | where {$_.Subject -eq ('CN=' + $_signingcertname )}) -eq $null)
-                        {
-                            $_SigningCertificatePassword = ConvertTo-SecureString -AsPlainText "$($using:Node.SigningCertificatePassword)" –Force
-                            $signingCert = New-SelfSignedCertificate -DnsName $_signingcertname -CertStoreLocation Cert:\LocalMachine\My
+                        if ( (Get-ChildItem  Cert:\LocalMachine\my | where {$_.Subject -eq ('CN=' + $_signingcertname )}) -eq $null)
+                        {                            
+                            $signingCert = New-SelfSignedCertificate -DnsName $_signingcertname -CertStoreLocation Cert:\LocalMachine\my
                             Export-PfxCertificate -Cert $signingCert -Password $_SigningCertificatePassword -FilePath "$($using:Node.SigningCertificatePath)"
                         }
                      }
-
-                    $_httpsCertificateThumbprint =  (Get-ChildItem  Cert:\LocalMachine\My | where {$_.Subject -eq ('CN=' + "$($using:Node.HttpsCertificateName)" )} | Sort-Object NotAfter | select -Last 1 ).Thumbprint
-                    $_encryptionCertificatThumbprint =  (Get-ChildItem  Cert:\LocalMachine\My | where {$_.Subject -eq ('CN=' + "$($using:Node.EncryptionCertificateName)" )} | Sort-Object NotAfter | select -Last 1 ).Thumbprint
-                    $_signingCertificateThumbprint =  (Get-ChildItem  Cert:\LocalMachine\My | where {$_.Subject -eq ('CN=' + "$($using:Node.SigningCertificateName)")} | Sort-Object NotAfter | select -Last 1 ).Thumbprint
-                    $httpsCert = (Get-ChildItem  Cert:\LocalMachine\My | where {$_.Subject -eq ('CN=' + "$($using:Node.HttpsCertificateName)") } | Sort-Object NotAfter | select -Last 1 )
-                    [System.Security.Cryptography.RSACng] $rsa = [System.Security.Cryptography.X509Certificates.RSACertificateExtensions]::GetRSAPrivateKey($httpsCert)
-                    [System.Security.Cryptography.CngKey] $key = $rsa.Key
-                    Write-Verbose "encryptionCert Private key is located at $($key.UniqueName)"
-                    $httpsCertPath = "C:\ProgramData\Microsoft\Crypto\Keys\$($key.UniqueName)"
-                    $acl= Get-Acl -Path $httpsCertPath
-                    $permission="Authenticated Users","FullControl","Allow"
-                    $accessRule=new-object System.Security.AccessControl.FileSystemAccessRule $permission
-                    $acl.AddAccessRule($accessRule)
-                    Set-Acl $httpsCertPath $acl
-                    $encryptionCert = (Get-ChildItem  Cert:\LocalMachine\My | where {$_.Subject -eq ('CN=' + "$($using:Node.EncryptionCertificateName)") } | Sort-Object NotAfter | select -Last 1 )
-                    [System.Security.Cryptography.RSACng] $rsa = [System.Security.Cryptography.X509Certificates.RSACertificateExtensions]::GetRSAPrivateKey($encryptionCert)
-                    [System.Security.Cryptography.CngKey] $key = $rsa.Key
-                    Write-Verbose "encryptionCert Private key is located at $($key.UniqueName)"
-                    $encryptionCertPath = "C:\ProgramData\Microsoft\Crypto\Keys\$($key.UniqueName)"
-                    $acl= Get-Acl -Path $encryptionCertPath
-                    $permission="Authenticated Users","FullControl","Allow"
-                    $accessRule=new-object System.Security.AccessControl.FileSystemAccessRule $permission
-                    $acl.AddAccessRule($accessRule)
-                    Set-Acl $encryptionCertPath $acl
-                    $SigningCert = (Get-ChildItem  Cert:\LocalMachine\My | where {$_.Subject -eq ('CN=' + "$($using:Node.SigningCertificateName)") } | Sort-Object NotAfter | select -Last 1 )
-                    [System.Security.Cryptography.RSACng] $rsa = [System.Security.Cryptography.X509Certificates.RSACertificateExtensions]::GetRSAPrivateKey($SigningCert)
-                    [System.Security.Cryptography.CngKey] $key = $rsa.Key
-                    Write-Verbose "SigningCert Private key is located at $($key.UniqueName)"
-                    $SigningCertPath = "C:\ProgramData\Microsoft\Crypto\Keys\$($key.UniqueName)"
-                    $acl= Get-Acl -Path $SigningCertPath
-                    $permission="Authenticated Users","FullControl","Allow"
-                    $accessRule=new-object System.Security.AccessControl.FileSystemAccessRule $permission
-                    $acl.AddAccessRule($accessRule)
-                    Set-Acl $SigningCertPath $acl
+                     else
+                     {
+                        ### https cert need be imported to root store
+                        $HttpsCert = Import-PfxCertificate -CertStoreLocation Cert:\LocalMachine\Root -FilePath "$($using:Node.HttpsCertificatePath)" -Password $_HttpsCertificatePassword
+                     }
 
                     if($using:Node.AttestationMode -eq 'TrustActiveDirectory')
                     {
@@ -227,9 +203,12 @@ Configuration xHGS
                         Initialize-HgsServer -HgsServiceName $($using:Node.HgsServiceName) -Http -Https -TrustActiveDirectory `
                                                -HttpPort $($using:Node.HttpPort ) `
                                                -HttpsPort $($using:Node.HttpsPort ) `
-                                               -HttpsCertificateThumbprint $_httpsCertificateThumbprint `
-                                               -EncryptionCertificateThumbprint $_encryptionCertificatThumbprint `
-                                               -SigningCertificateThumbprint $_signingCertificateThumbprint
+                                               -HttpsCertificatePath $($using:Node.HttpsCertificatePath) `
+                                               -HttpsCertificatePassword  $_HttpsCertificatePassword `
+                                               -EncryptionCertificatePath  $($using:Node.EncryptionCertificatePath) `
+                                               -EncryptionCertificatePassword  $_EncryptionCertificatePassword `
+                                               -SigningCertificatePath  $($using:Node.SigningCertificatePath) `
+                                               -SigningCertificatePassword  $_SigningCertificatePassword 
                      }
 
                      if($using:Node.AttestationMode -eq 'TrustTpm')
@@ -237,9 +216,12 @@ Configuration xHGS
                         Initialize-HgsServer   -HgsServiceName  $($using:Node.HgsServiceName) -Http -Https -TrustTpm `
                                                -HttpPort $($using:Node.HttpPort ) `
                                                -HttpsPort $($using:Node.HttpsPort ) `
-                                               -HttpsCertificateThumbprint $_httpsCertificateThumbprint `
-                                               -EncryptionCertificateThumbprint $_encryptionCertificatThumbprint `
-                                               -SigningCertificateThumbprint $_signingCertificateThumbprint
+                                               -HttpsCertificatePath $($using:Node.HttpsCertificatePath) `
+                                               -HttpsCertificatePassword  $_HttpsCertificatePassword `
+                                               -EncryptionCertificatePath  $($using:Node.EncryptionCertificatePath) `
+                                               -EncryptionCertificatePassword  $_EncryptionCertificatePassword `
+                                               -SigningCertificatePath  $($using:Node.SigningCertificatePath) `
+                                               -SigningCertificatePassword  $_SigningCertificatePassword 
                      }                       
                  }
  
@@ -379,8 +361,8 @@ Configuration xHGS
                                 public static extern Boolean CloseHandle(IntPtr hObject); 
 '@
 
-                       $ImpersonateLib  = Add-Type -PassThru -Namespace 'Lib.Impersonation' -Name ImpersonationLib -MemberDefinition $sig 
-                       [IntPtr] $userToken = [Security.Principal.WindowsIdentity]::GetCurrent().Token
+                        $ImpersonateLib  = Add-Type -PassThru -Namespace 'Lib.Impersonation' -Name ImpersonationLib -MemberDefinition $sig 
+                        [IntPtr] $userToken = [Security.Principal.WindowsIdentity]::GetCurrent().Token
                         $userToken
                         $bLogin = $ImpersonateLib::LogonUser($cred.GetNetworkCredential().UserName, $cred.GetNetworkCredential().Domain, $cred.GetNetworkCredential().Password, 9, 0, [ref]$userToken)
 
@@ -393,65 +375,26 @@ Configuration xHGS
                         {
                             throw "Can't get Impersonate Token from DSC toLogon as User $cred.GetNetworkCredential().UserName."
                         }
+                        
+                        $_HttpsCertificatePassword = ConvertTo-SecureString -AsPlainText "$($using:Node.HttpsCertificatePassword)" –Force
 
                         if([boolean]::Parse("$($using:Node.GenerateSelfSignedCertificate)"))
                         {
-                             #Copy the self-signed certificate generated on first node
-                            $_HttpsCertificatePassword = ConvertTo-SecureString -AsPlainText "$($using:Node.HttpsCertificatePassword)" –Force
-                            Import-PfxCertificate -CertStoreLocation Cert:\LocalMachine\My -FilePath (([string]::Format('\\{0}\{1}', $($using:Node.HgsServerPrimaryIPAddress), $($using:Node.HttpsCertificatePath))).replace(":","$")) -Password $_HttpsCertificatePassword 
-                            $httpsCert = (Get-ChildItem  Cert:\LocalMachine\My | where {$_.Subject -eq ('CN=' + "$($using:Node.HttpsCertificateName)") } | Sort-Object NotAfter | select -Last 1 )
-							[System.Security.Cryptography.RSACng] $rsa = [System.Security.Cryptography.X509Certificates.RSACertificateExtensions]::GetRSAPrivateKey($httpsCert)
-							[System.Security.Cryptography.CngKey] $key = $rsa.Key
-							Write-Verbose "encryptionCert Private key is located at $($key.UniqueName)"
-							$httpsCertPath = "C:\ProgramData\Microsoft\Crypto\Keys\$($key.UniqueName)"
-							$acl= Get-Acl -Path $httpsCertPath
-							$permission="Authenticated Users","FullControl","Allow"
-							$accessRule=new-object System.Security.AccessControl.FileSystemAccessRule $permission
-							$acl.AddAccessRule($accessRule)
-							Set-Acl $httpsCertPath $acl
-                            $_httpsCertificateThumbprint =  (Get-ChildItem  Cert:\LocalMachine\My | where {$_.Subject -eq ('CN=' + "$($using:Node.HttpsCertificateName)" )} | Sort-Object NotAfter | select -Last 1 ).Thumbprint
-                            Initialize-HgsServer -force -Confirm:$false -Http -Https -HgsServerIPAddress $($using:Node.HgsServerPrimaryIPAddress) `
-                                                 -HttpPort $($using:Node.HttpPort ) `
-                                                 -HttpsPort $($using:Node.HttpsPort ) `
-                                                 -HttpsCertificateThumbprint $_httpsCertificateThumbprint 
-              
-							#Import cert with keys must happen after initialize
-                            $_EncryptionCertificatePassword = ConvertTo-SecureString -AsPlainText "$($using:Node.EncryptionCertificatePassword)" –Force 
-                            $_SigningCertificatePassword = ConvertTo-SecureString -AsPlainText "$($using:Node.SigningCertificatePassword)" –Force
-							Import-PfxCertificate -CertStoreLocation Cert:\LocalMachine\My -FilePath (([string]::Format('\\{0}\{1}', $($using:Node.HgsServerPrimaryIPAddress), $($using:Node.EncryptionCertificatePath))).replace(":","$")) -Password $_EncryptionCertificatePassword 
-							Import-PfxCertificate -CertStoreLocation Cert:\LocalMachine\My -FilePath (([string]::Format('\\{0}\{1}', $($using:Node.HgsServerPrimaryIPAddress), $($using:Node.SigningCertificatePath))).replace(":","$")) -Password $_SigningCertificatePassword 
+                            ### https cert need be imported to root store                      
+                            $httpsCert = Import-PfxCertificate -CertStoreLocation Cert:\LocalMachine\root -FilePath (([string]::Format('\\{0}\{1}', $($using:Node.HgsServerPrimaryIPAddress), $($using:Node.HttpsCertificatePath))).replace(":","$")) -Password $_HttpsCertificatePassword               
                         }
                         else
                         {
-                             # Find certificate from the store with cert name
-                             $_httpsCertificateThumbprint =  (Get-ChildItem  Cert:\LocalMachine\My | where {$_.Subject -eq ('CN=' + "$($using:Node.HttpsCertificateName)" )} | Sort-Object NotAfter | select -Last 1 ).Thumbprint
-                             Initialize-HgsServer   -force -Confirm:$false -Http -Https -HgsServerIPAddress $($using:Node.HgsServerPrimaryIPAddress) `
-                                               -HttpPort $($using:Node.HttpPort ) `
-                                               -HttpsPort $($using:Node.HttpsPort ) `
-                                               -HttpsCertificateThumbprint $_httpsCertificateThumbprint 
-                        }
+                            ### https cert need be imported to root store
+                            $httpsCert = Import-PfxCertificate -CertStoreLocation Cert:\LocalMachine\root -FilePath $($using:Node.HttpsCertificatePath) -Password $_HttpsCertificatePassword               
 
-						#Granting Access to private keys
-						$encryptionCert = (Get-ChildItem  Cert:\LocalMachine\My | where {$_.Subject -eq ('CN=' + "$($using:Node.EncryptionCertificateName)") } | Sort-Object NotAfter | select -Last 1 )
-						[System.Security.Cryptography.RSACng] $rsa = [System.Security.Cryptography.X509Certificates.RSACertificateExtensions]::GetRSAPrivateKey($encryptionCert)
-						[System.Security.Cryptography.CngKey] $key = $rsa.Key
-						Write-Verbose "encryptionCert Private key is located at $($key.UniqueName)"
-						$encryptionCertPath = "C:\ProgramData\Microsoft\Crypto\Keys\$($key.UniqueName)"
-						$acl= Get-Acl -Path $encryptionCertPath
-						$permission="Authenticated Users","FullControl","Allow"
-						$accessRule=new-object System.Security.AccessControl.FileSystemAccessRule $permission
-						$acl.AddAccessRule($accessRule)
-						Set-Acl $encryptionCertPath $acl
-						$SigningCert = (Get-ChildItem  Cert:\LocalMachine\My | where {$_.Subject -eq ('CN=' + "$($using:Node.SigningCertificateName)") } | Sort-Object NotAfter | select -Last 1 )
-						[System.Security.Cryptography.RSACng] $rsa = [System.Security.Cryptography.X509Certificates.RSACertificateExtensions]::GetRSAPrivateKey($SigningCert)
-						[System.Security.Cryptography.CngKey] $key = $rsa.Key
-						Write-Verbose "SigningCert Private key is located at $($key.UniqueName)"
-						$SigningCertPath = "C:\ProgramData\Microsoft\Crypto\Keys\$($key.UniqueName)"
-						$acl= Get-Acl -Path $SigningCertPath
-						$permission="Authenticated Users","FullControl","Allow"
-						$accessRule=new-object System.Security.AccessControl.FileSystemAccessRule $permission
-						$acl.AddAccessRule($accessRule)
-						Set-Acl $SigningCertPath $acl
+                        }
+ 
+                        Initialize-HgsServer -force -Confirm:$false -Http -Https -HgsServerIPAddress $($using:Node.HgsServerPrimaryIPAddress) `
+                                                -HttpPort $($using:Node.HttpPort ) `
+                                                -HttpsPort $($using:Node.HttpsPort ) `
+                                                -HttpsCertificatePath $($using:Node.HttpsCertificatePath) `
+                                                -HttpsCertificatePassword  $_HttpsCertificatePassword 
                 }
                  
                 TestScript = { 

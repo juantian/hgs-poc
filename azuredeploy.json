@@ -391,9 +391,9 @@
               "autoUpgradeMinorVersion": true,
               "settings": {
                 "fileUris": [
-                 "[concat(variables('DSCInitScriptFolder') , variables('DSCInitScriptFileName'))]"
+                  "[concat(variables('DSCInitScriptFolder') , variables('DSCInitScriptFileName'))]"
                 ],
-                "commandToExecute": "[concat('powershell -ExecutionPolicy Unrestricted -File ', variables('DSCInitScriptFileName') , concat(' -NodeType:', copyindex()) ,' -HgsServerPrimaryIPAddress:10.0.0.4',  concat(' -HgsServerPrimaryAdminUsername:', parameters('adminUsername')), concat(' -HgsServerPrimaryAdminPassword:', parameters('adminPassword')) )]"
+                "commandToExecute": "[concat('powershell -ExecutionPolicy Unrestricted -File ', variables('DSCInitScriptFileName') , concat(' -NodeType:', copyindex()) ,' -HgsServerPrimaryIPAddress:10.0.0.4',  concat(' -HgsServerPrimaryAdminUsername:', parameters('adminUsername')), concat(' -HgsServerPrimaryAdminPassword:', parameters('adminPassword')), concat(' -HttpsCertificateName:', reference(variables('publicIPAddressName')).dnsSettings.fqdn) )]"
               }
             }
           }
