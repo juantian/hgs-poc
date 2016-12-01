@@ -67,7 +67,7 @@ param(
 Function setAKL
 {
     Param(
-        [X509Certificate2]
+        [System.Security.Cryptography.X509Certificates.X509Certificate]
         $cert
     )
     [System.Security.Cryptography.RSACng] $rsa = [System.Security.Cryptography.X509Certificates.RSACertificateExtensions]::GetRSAPrivateKey($cert)
