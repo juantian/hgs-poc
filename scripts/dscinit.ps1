@@ -64,6 +64,23 @@ param(
     [string] $HgsServerPrimaryAdminPassword = 'Pa$$w0rd12345'
 )
 
+Function setAKL
+{
+    Param(
+        [X509Certificate2]
+        $cert
+    )
+    [System.Security.Cryptography.RSACng] $rsa = [System.Security.Cryptography.X509Certificates.RSACertificateExtensions]::GetRSAPrivateKey($cert)
+    [System.Security.Cryptography.CngKey] $key = $rsa.Key
+    Write-Verbose "encryptionCert Private key is located at $($key.UniqueName)"
+    $certPath = "C:\ProgramData\Microsoft\Crypto\Keys\$($key.UniqueName)"
+    $acl= Get-Acl -Path $certPath
+    $permission="Authenticated Users","FullControl","Allow"
+    $accessRule=new-object System.Security.AccessControl.FileSystemAccessRule $permission
+    $acl.AddAccessRule($accessRule)
+    Set-Acl $certPath $acl
+}
+
 ### Install Windows Features and AutoReboot
 Configuration xHGSCommon
 {
@@ -194,11 +211,17 @@ Configuration xHGS
                      else
                      {
                         ### https cert need be imported to root store
+                        $signingCert = Import-PfxCertificate -CertStoreLocation Cert:\LocalMachine\my -FilePath "$($using:Node.SigningCertificatePath)" -Password $_SigningCertificatePassword
+                        $encryptionCert = Import-PfxCertificate -CertStoreLocation Cert:\LocalMachine\my -FilePath "$($using:Node.EncryptionCertificatePath)" -Password $_EncryptionCertificatePassword
                         $HttpsCert = Import-PfxCertificate -CertStoreLocation Cert:\LocalMachine\Root -FilePath "$($using:Node.HttpsCertificatePath)" -Password $_HttpsCertificatePassword
                      }
 
-                    if($using:Node.AttestationMode -eq 'TrustActiveDirectory')
-                    {
+                     setAKL($signingCert)
+                     setAKL($encryptionCert)
+                     setAKL($HttpsCert)
+
+                     if($using:Node.AttestationMode -eq 'TrustActiveDirectory')
+                     {
                         $_HttpsCertificatePassword = (ConvertTo-SecureString $($using:Node.HttpsCertificatePassword) -AsPlainText -Force )
                         Initialize-HgsServer -HgsServiceName $($using:Node.HgsServiceName) -Http -Https -TrustActiveDirectory `
                                                -HttpPort $($using:Node.HttpPort ) `
@@ -389,7 +412,9 @@ Configuration xHGS
                             $httpsCert = Import-PfxCertificate -CertStoreLocation Cert:\LocalMachine\root -FilePath $($using:Node.HttpsCertificatePath) -Password $_HttpsCertificatePassword               
 
                         }
- 
+                        
+                        setAKL($httpsCert)
+
                         Initialize-HgsServer -force -Confirm:$false -Http -Https -HgsServerIPAddress $($using:Node.HgsServerPrimaryIPAddress) `
                                                 -HttpPort $($using:Node.HttpPort ) `
                                                 -HttpsPort $($using:Node.HttpsPort ) `
