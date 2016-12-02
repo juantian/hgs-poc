@@ -64,7 +64,7 @@ param(
     [string] $HgsServerPrimaryAdminPassword = 'Pa$$w0rd12345'
 )
 
-Function setAKL
+Function setACL
 {
     Param(
         [System.Security.Cryptography.X509Certificates.X509Certificate]
@@ -191,9 +191,9 @@ Configuration xHGS
                         if ( (Get-ChildItem  Cert:\LocalMachine\root | where {$_.Subject -eq ('CN=' + $_Httpscertname )}) -eq $null)
                         {
                             Write-verbose "Generating Certificate "
-                            $HttpsCert = New-SelfSignedCertificate -DnsName $_Httpscertname -CertStoreLocation Cert:\LocalMachine\my
-                            Export-PfxCertificate -Cert $HttpsCert -Password $_HttpsCertificatePassword -FilePath "$($using:Node.HttpsCertificatePath)" 
-                            $HttpsCert = Import-PfxCertificate -CertStoreLocation Cert:\LocalMachine\Root -FilePath "$($using:Node.HttpsCertificatePath)" -Password $_HttpsCertificatePassword
+                            $httpsCert = New-SelfSignedCertificate -DnsName $_Httpscertname -CertStoreLocation Cert:\LocalMachine\my
+                            Export-PfxCertificate -Cert $httpsCert -Password $_HttpsCertificatePassword -FilePath "$($using:Node.HttpsCertificatePath)" 
+                            $httpsCert = Import-PfxCertificate -CertStoreLocation Cert:\LocalMachine\Root -FilePath "$($using:Node.HttpsCertificatePath)" -Password $_HttpsCertificatePassword
                         }
 
                         if ( (Get-ChildItem  Cert:\LocalMachine\my | where {$_.Subject -eq ('CN=' + $_encryptioncertname )}) -eq $null)
@@ -213,12 +213,38 @@ Configuration xHGS
                         ### https cert need be imported to root store
                         $signingCert = Import-PfxCertificate -CertStoreLocation Cert:\LocalMachine\my -FilePath "$($using:Node.SigningCertificatePath)" -Password $_SigningCertificatePassword
                         $encryptionCert = Import-PfxCertificate -CertStoreLocation Cert:\LocalMachine\my -FilePath "$($using:Node.EncryptionCertificatePath)" -Password $_EncryptionCertificatePassword
-                        $HttpsCert = Import-PfxCertificate -CertStoreLocation Cert:\LocalMachine\Root -FilePath "$($using:Node.HttpsCertificatePath)" -Password $_HttpsCertificatePassword
+                        $httpsCert = Import-PfxCertificate -CertStoreLocation Cert:\LocalMachine\Root -FilePath "$($using:Node.HttpsCertificatePath)" -Password $_HttpsCertificatePassword
                      }
 
-                     setAKL($signingCert)
-                     setAKL($encryptionCert)
-                     setAKL($HttpsCert)
+                    [System.Security.Cryptography.RSACng] $rsa = [System.Security.Cryptography.X509Certificates.RSACertificateExtensions]::GetRSAPrivateKey($httpsCert)
+                    [System.Security.Cryptography.CngKey] $key = $rsa.Key
+                    Write-Verbose "https Private key is located at $($key.UniqueName)"
+                    $httpsCertPath = "C:\ProgramData\Microsoft\Crypto\Keys\$($key.UniqueName)"
+                    $acl= Get-Acl -Path $httpsCertPath
+                    $permission="Authenticated Users","FullControl","Allow"
+                    $accessRule=new-object System.Security.AccessControl.FileSystemAccessRule $permission
+                    $acl.AddAccessRule($accessRule)
+                    Set-Acl $httpsCertPath $acl
+
+                    [System.Security.Cryptography.RSACng] $rsa = [System.Security.Cryptography.X509Certificates.RSACertificateExtensions]::GetRSAPrivateKey($encryptionCert)
+                    [System.Security.Cryptography.CngKey] $key = $rsa.Key
+                    Write-Verbose "encryptionCert Private key is located at $($key.UniqueName)"
+                    $encryptionCertPath = "C:\ProgramData\Microsoft\Crypto\Keys\$($key.UniqueName)"
+                    $acl= Get-Acl -Path $encryptionCertPath
+                    $permission="Authenticated Users","FullControl","Allow"
+                    $accessRule=new-object System.Security.AccessControl.FileSystemAccessRule $permission
+                    $acl.AddAccessRule($accessRule)
+                    Set-Acl $encryptionCertPath $acl  
+                                    
+                    [System.Security.Cryptography.RSACng] $rsa = [System.Security.Cryptography.X509Certificates.RSACertificateExtensions]::GetRSAPrivateKey($SigningCert)
+                    [System.Security.Cryptography.CngKey] $key = $rsa.Key
+                    Write-Verbose "SigningCert Private key is located at $($key.UniqueName)"
+                    $SigningCertPath = "C:\ProgramData\Microsoft\Crypto\Keys\$($key.UniqueName)"
+                    $acl= Get-Acl -Path $SigningCertPath
+                    $permission="Authenticated Users","FullControl","Allow"
+                    $accessRule=new-object System.Security.AccessControl.FileSystemAccessRule $permission
+                    $acl.AddAccessRule($accessRule)
+                    Set-Acl $SigningCertPath $acl
 
                      if($using:Node.AttestationMode -eq 'TrustActiveDirectory')
                      {
@@ -413,7 +439,15 @@ Configuration xHGS
 
                         }
                         
-                        setAKL($httpsCert)
+                        [System.Security.Cryptography.RSACng] $rsa = [System.Security.Cryptography.X509Certificates.RSACertificateExtensions]::GetRSAPrivateKey($httpsCert)
+                        [System.Security.Cryptography.CngKey] $key = $rsa.Key
+                        Write-Verbose "https Private key is located at $($key.UniqueName)"
+                        $httpsCertPath = "C:\ProgramData\Microsoft\Crypto\Keys\$($key.UniqueName)"
+                        $acl= Get-Acl -Path $httpsCertPath
+                        $permission="Authenticated Users","FullControl","Allow"
+                        $accessRule=new-object System.Security.AccessControl.FileSystemAccessRule $permission
+                        $acl.AddAccessRule($accessRule)
+                        Set-Acl $httpsCertPath $acl
 
                         Initialize-HgsServer -force -Confirm:$false -Http -Https -HgsServerIPAddress $($using:Node.HgsServerPrimaryIPAddress) `
                                                 -HttpPort $($using:Node.HttpPort ) `
