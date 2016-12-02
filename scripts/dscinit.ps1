@@ -426,7 +426,8 @@ Configuration xHGS
                         }
                         
                         $_HttpsCertificatePassword = ConvertTo-SecureString -AsPlainText "$($using:Node.HttpsCertificatePassword)" –Force
-
+                        $_EncryptionCertificatePassword = ConvertTo-SecureString -AsPlainText "$($using:Node.EncryptionCertificatePassword)" –Force 
+                        $_SigningCertificatePassword = ConvertTo-SecureString -AsPlainText "$($using:Node.SigningCertificatePassword)" –Force
                         if([boolean]::Parse("$($using:Node.GenerateSelfSignedCertificate)"))
                         {
                             ### https cert need be imported to root store                      
@@ -454,6 +455,37 @@ Configuration xHGS
                                                 -HttpsPort $($using:Node.HttpsPort ) `
                                                 -HttpsCertificatePath $($using:Node.HttpsCertificatePath) `
                                                 -HttpsCertificatePassword  $_HttpsCertificatePassword 
+ 
+						if([boolean]::Parse("$($using:Node.GenerateSelfSignedCertificate)"))
+                        {
+                            $encryptionCert = Import-PfxCertificate -CertStoreLocation Cert:\LocalMachine\My -FilePath (([string]::Format('\\{0}\{1}', $($using:Node.HgsServerPrimaryIPAddress), $($using:Node.EncryptionCertificatePath))).replace(":","$")) -Password $_EncryptionCertificatePassword 
+						    $signingCert = Import-PfxCertificate -CertStoreLocation Cert:\LocalMachine\My -FilePath (([string]::Format('\\{0}\{1}', $($using:Node.HgsServerPrimaryIPAddress), $($using:Node.SigningCertificatePath))).replace(":","$")) -Password $_SigningCertificatePassword 
+                        }
+                        else
+                        {
+                            $signingCert = Import-PfxCertificate -CertStoreLocation Cert:\LocalMachine\my -FilePath "$($using:Node.SigningCertificatePath)" -Password $_SigningCertificatePassword
+                            $encryptionCert = Import-PfxCertificate -CertStoreLocation Cert:\LocalMachine\my -FilePath "$($using:Node.EncryptionCertificatePath)" -Password $_EncryptionCertificatePassword  
+                        }
+
+                        [System.Security.Cryptography.RSACng] $rsa = [System.Security.Cryptography.X509Certificates.RSACertificateExtensions]::GetRSAPrivateKey($encryptionCert)
+                        [System.Security.Cryptography.CngKey] $key = $rsa.Key
+                        Write-Verbose "encryptionCert Private key is located at $($key.UniqueName)"
+                        $encryptionCertPath = "C:\ProgramData\Microsoft\Crypto\Keys\$($key.UniqueName)"
+                        $acl= Get-Acl -Path $encryptionCertPath
+                        $permission="Authenticated Users","FullControl","Allow"
+                        $accessRule=new-object System.Security.AccessControl.FileSystemAccessRule $permission
+                        $acl.AddAccessRule($accessRule)
+                        Set-Acl $encryptionCertPath $acl  
+                                    
+                        [System.Security.Cryptography.RSACng] $rsa = [System.Security.Cryptography.X509Certificates.RSACertificateExtensions]::GetRSAPrivateKey($SigningCert)
+                        [System.Security.Cryptography.CngKey] $key = $rsa.Key
+                        Write-Verbose "SigningCert Private key is located at $($key.UniqueName)"
+                        $SigningCertPath = "C:\ProgramData\Microsoft\Crypto\Keys\$($key.UniqueName)"
+                        $acl= Get-Acl -Path $SigningCertPath
+                        $permission="Authenticated Users","FullControl","Allow"
+                        $accessRule=new-object System.Security.AccessControl.FileSystemAccessRule $permission
+                        $acl.AddAccessRule($accessRule)
+                        Set-Acl $SigningCertPath $acl
                 }
                  
                 TestScript = { 
