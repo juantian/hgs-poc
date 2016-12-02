@@ -64,23 +64,6 @@ param(
     [string] $HgsServerPrimaryAdminPassword = 'Pa$$w0rd12345'
 )
 
-Function setACL
-{
-    Param(
-        [System.Security.Cryptography.X509Certificates.X509Certificate]
-        $cert
-    )
-    [System.Security.Cryptography.RSACng] $rsa = [System.Security.Cryptography.X509Certificates.RSACertificateExtensions]::GetRSAPrivateKey($cert)
-    [System.Security.Cryptography.CngKey] $key = $rsa.Key
-    Write-Verbose "encryptionCert Private key is located at $($key.UniqueName)"
-    $certPath = "C:\ProgramData\Microsoft\Crypto\Keys\$($key.UniqueName)"
-    $acl= Get-Acl -Path $certPath
-    $permission="Authenticated Users","FullControl","Allow"
-    $accessRule=new-object System.Security.AccessControl.FileSystemAccessRule $permission
-    $acl.AddAccessRule($accessRule)
-    Set-Acl $certPath $acl
-}
-
 ### Install Windows Features and AutoReboot
 Configuration xHGSCommon
 {
@@ -149,7 +132,7 @@ Configuration xHGS
                     if($result -eq $null) 
                     {
 			            Write-Verbose "Machine may not ready. Wait for 300s, then retrying..."
-	                    start-sleep -Seconds 300
+	                    start-sleep -Seconds $($using:Node.SleepTime)
 	                    try { 
          	                $result = Get-ADDomain -Current LocalComputer -ErrorAction:SilentlyContinue
                 	        Write-Verbose "2nd Get-ADDomain Result: $result"
@@ -188,21 +171,21 @@ Configuration xHGS
                         $_Httpscertname = "$($using:Node.HttpsCertificateName)"
                         $_encryptioncertname = "$($using:Node.EncryptionCertificateName)"
                         $_signingcertname = "$($using:Node.SigningCertificateName)"
-                        if ( (Get-ChildItem  Cert:\LocalMachine\root | where {$_.Subject -eq ('CN=' + $_Httpscertname )}) -eq $null)
-                        {
-                            Write-verbose "Generating Certificate "
+                        Write-verbose "Generating Certificate "
+                        if (($httpsCert = Get-ChildItem  Cert:\LocalMachine\root | where {$_.Subject -eq ('CN=' + $_Httpscertname )}) -eq $null)
+                        {                            
                             $httpsCert = New-SelfSignedCertificate -DnsName $_Httpscertname -CertStoreLocation Cert:\LocalMachine\my
                             Export-PfxCertificate -Cert $httpsCert -Password $_HttpsCertificatePassword -FilePath "$($using:Node.HttpsCertificatePath)" 
                             $httpsCert = Import-PfxCertificate -CertStoreLocation Cert:\LocalMachine\Root -FilePath "$($using:Node.HttpsCertificatePath)" -Password $_HttpsCertificatePassword
                         }
 
-                        if ( (Get-ChildItem  Cert:\LocalMachine\my | where {$_.Subject -eq ('CN=' + $_encryptioncertname )}) -eq $null)
+                        if (($encryptionCert = Get-ChildItem  Cert:\LocalMachine\my | where {$_.Subject -eq ('CN=' + $_encryptioncertname )}) -eq $null)
                         {                            
                             $encryptionCert = New-SelfSignedCertificate -DnsName $_encryptioncertname -CertStoreLocation Cert:\LocalMachine\my
                             Export-PfxCertificate -Cert $encryptionCert -Password $_EncryptionCertificatePassword -FilePath "$($using:Node.EncryptionCertificatePath)"
                         }
 
-                        if ( (Get-ChildItem  Cert:\LocalMachine\my | where {$_.Subject -eq ('CN=' + $_signingcertname )}) -eq $null)
+                        if (($signingCert = Get-ChildItem  Cert:\LocalMachine\my | where {$_.Subject -eq ('CN=' + $_signingcertname )}) -eq $null)
                         {                            
                             $signingCert = New-SelfSignedCertificate -DnsName $_signingcertname -CertStoreLocation Cert:\LocalMachine\my
                             Export-PfxCertificate -Cert $signingCert -Password $_SigningCertificatePassword -FilePath "$($using:Node.SigningCertificatePath)"
@@ -211,10 +194,23 @@ Configuration xHGS
                      else
                      {
                         ### https cert need be imported to root store
-                        $signingCert = Import-PfxCertificate -CertStoreLocation Cert:\LocalMachine\my -FilePath "$($using:Node.SigningCertificatePath)" -Password $_SigningCertificatePassword
-                        $encryptionCert = Import-PfxCertificate -CertStoreLocation Cert:\LocalMachine\my -FilePath "$($using:Node.EncryptionCertificatePath)" -Password $_EncryptionCertificatePassword
-                        $httpsCert = Import-PfxCertificate -CertStoreLocation Cert:\LocalMachine\Root -FilePath "$($using:Node.HttpsCertificatePath)" -Password $_HttpsCertificatePassword
-                     }
+                        if (($httpsCert = Get-ChildItem  Cert:\LocalMachine\root | where {$_.Subject -eq ('CN=' + $_Httpscertname )}) -eq $null)
+                        {
+                            
+                            $httpsCert = Import-PfxCertificate -CertStoreLocation Cert:\LocalMachine\my -FilePath "$($using:Node.HttpsCertificatePath)" -Password $_HttpsCertificatePassword
+                            $httpsCert = Import-PfxCertificate -CertStoreLocation Cert:\LocalMachine\Root -FilePath "$($using:Node.HttpsCertificatePath)" -Password $_HttpsCertificatePassword
+                        }
+
+                        if (($encryptionCert = Get-ChildItem  Cert:\LocalMachine\my | where {$_.Subject -eq ('CN=' + $_encryptioncertname )}) -eq $null)
+                        {                            
+                            $encryptionCert = Import-PfxCertificate -CertStoreLocation Cert:\LocalMachine\my -FilePath "$($using:Node.EncryptionCertificatePath)" -Password $_EncryptionCertificatePassword
+                        }
+
+                        if (($signingCert = Get-ChildItem  Cert:\LocalMachine\my | where {$_.Subject -eq ('CN=' + $_signingcertname )}) -eq $null)
+                        {                            
+                            $signingCert = Import-PfxCertificate -CertStoreLocation Cert:\LocalMachine\my -FilePath "$($using:Node.SigningCertificatePath)" -Password $_SigningCertificatePassword
+                        }
+                    }
 
                     [System.Security.Cryptography.RSACng] $rsa = [System.Security.Cryptography.X509Certificates.RSACertificateExtensions]::GetRSAPrivateKey($httpsCert)
                     [System.Security.Cryptography.CngKey] $key = $rsa.Key
@@ -246,52 +242,83 @@ Configuration xHGS
                     $acl.AddAccessRule($accessRule)
                     Set-Acl $SigningCertPath $acl
 
-                     if($using:Node.AttestationMode -eq 'TrustActiveDirectory')
-                     {
+                    if($using:Node.AttestationMode -eq 'TrustActiveDirectory')
+                    {
                         $_HttpsCertificatePassword = (ConvertTo-SecureString $($using:Node.HttpsCertificatePassword) -AsPlainText -Force )
                         Initialize-HgsServer -HgsServiceName $($using:Node.HgsServiceName) -Http -Https -TrustActiveDirectory `
-                                               -HttpPort $($using:Node.HttpPort ) `
-                                               -HttpsPort $($using:Node.HttpsPort ) `
-                                               -HttpsCertificatePath $($using:Node.HttpsCertificatePath) `
-                                               -HttpsCertificatePassword  $_HttpsCertificatePassword `
-                                               -EncryptionCertificatePath  $($using:Node.EncryptionCertificatePath) `
-                                               -EncryptionCertificatePassword  $_EncryptionCertificatePassword `
-                                               -SigningCertificatePath  $($using:Node.SigningCertificatePath) `
-                                               -SigningCertificatePassword  $_SigningCertificatePassword 
-                     }
+                                            -HttpPort $($using:Node.HttpPort ) `
+                                            -HttpsPort $($using:Node.HttpsPort ) `
+                                            -HttpsCertificatePath $($using:Node.HttpsCertificatePath) `
+                                            -HttpsCertificatePassword  $_HttpsCertificatePassword `
+                                            -EncryptionCertificatePath  $($using:Node.EncryptionCertificatePath) `
+                                            -EncryptionCertificatePassword  $_EncryptionCertificatePassword `
+                                            -SigningCertificatePath  $($using:Node.SigningCertificatePath) `
+                                            -SigningCertificatePassword  $_SigningCertificatePassword 
+                    }
 
-                     if($using:Node.AttestationMode -eq 'TrustTpm')
-                     {
+                    if($using:Node.AttestationMode -eq 'TrustTpm')
+                    {
                         Initialize-HgsServer   -HgsServiceName  $($using:Node.HgsServiceName) -Http -Https -TrustTpm `
-                                               -HttpPort $($using:Node.HttpPort ) `
-                                               -HttpsPort $($using:Node.HttpsPort ) `
-                                               -HttpsCertificatePath $($using:Node.HttpsCertificatePath) `
-                                               -HttpsCertificatePassword  $_HttpsCertificatePassword `
-                                               -EncryptionCertificatePath  $($using:Node.EncryptionCertificatePath) `
-                                               -EncryptionCertificatePassword  $_EncryptionCertificatePassword `
-                                               -SigningCertificatePath  $($using:Node.SigningCertificatePath) `
-                                               -SigningCertificatePassword  $_SigningCertificatePassword 
-                     }                       
+                                            -HttpPort $($using:Node.HttpPort ) `
+                                            -HttpsPort $($using:Node.HttpsPort ) `
+                                            -HttpsCertificatePath $($using:Node.HttpsCertificatePath) `
+                                            -HttpsCertificatePassword  $_HttpsCertificatePassword `
+                                            -EncryptionCertificatePath  $($using:Node.EncryptionCertificatePath) `
+                                            -EncryptionCertificatePassword  $_EncryptionCertificatePassword `
+                                            -SigningCertificatePath  $($using:Node.SigningCertificatePath) `
+                                            -SigningCertificatePassword  $_SigningCertificatePassword 
+                    }                       
                  }
  
                 TestScript = { 
-                    $result = $null
-                    [System.Reflection.Assembly]::LoadWithPartialName("Microsoft.Windows.HgsStore")
-                    $store = $null
-                    $result = [Microsoft.Windows.HgsStore.HgsReplicatedStore]::TryOpenStore("Attestation", [ref]$store)
-                    Write-Verbose "1st result of HgsReplicatedStore: TryOpenStore: $result"
-
-                    If( $result -eq $false)
+                    $result = $true                    
+                    $Urls = @("http://localhost/Attestation/getinfo", "http://localhost/KeyProtection/service/metadata/2014-07/metadata.xml")
+                    
+                    foreach ($url in $Urls)
                     {
-	                    Write-Verbose "Machine may not ready. Wait for 300s, then retrying..."
-	                    start-sleep -Seconds 300
-                    	$result = [Microsoft.Windows.HgsStore.HgsReplicatedStore]::TryOpenStore("Attestation", [ref]$store)
-                        Write-Verbose "2nd result of HgsReplicatedStore: TryOpenStore: $result"
-			            if ($result -eq $false)
-			            {
+                        try  
+                        {  
+                            $response = [System.Net.WebRequest]::Create($url).GetResponse(); 
+                            Write-verbose ($url + "Response Status Code: " + $response.StatusCode)    
+
+                            if ($response.StatusCode -ne [System.Net.HttpStatusCode]::OK)
+                            {  
+                                $result = $false
+                            }
+                        }  
+                        catch  
+                        {  
+                            $result = $false
+                        }  
+                    }
+
+                    if ($result -eq $false)
+                    {
+                    	Write-Verbose "Machine may not ready. Wait for 300s, then retrying..."
+	                    start-sleep -Seconds $($using:Node.SleepTime)
+                        $result = $true
+                        foreach ($url in $Urls)
+                        {
+                            try  
+                            {  
+                                $response = [System.Net.WebRequest]::Create($url).GetResponse(); 
+                                Write-verbose ($url + "Response Status Code: " + $response.StatusCode)    
+
+                                if ($response.StatusCode -ne [System.Net.HttpStatusCode]::OK)
+                                {  
+                                    $result = $false
+                                }
+                            }  
+                            catch  
+                            {  
+                                $result = $false
+                            }  
+                        } 
+                        if ($result -eq $false)
+                        {
                             Write-verbose "Clearing HGS Server Configurtion from this node"
-	                        Clear-HgsServer -Force -Confirm:$false #-WarningAction:SilentlyContinue
-			            }
+                            Clear-HgsServer -Force -Confirm:$false #-WarningAction:SilentlyContinue
+                        }
                     }
                     return $result
                 }
@@ -375,16 +402,16 @@ Configuration xHGS
                         Write-Verbose "1st Get-ADDomain Result: $result"
                      } catch {}
 
-                    if($result -eq $null) 
+                    if ($result -eq $null) 
                     {
 			            Write-Verbose "Machine may not ready. Wait for 300s, then retrying..."
-	                    start-sleep -Seconds 300
+	                    start-sleep -Seconds $($using:Node.SleepTime)
 	                    try { 
          	                $result = Get-ADDomain -Current LocalComputer -ErrorAction:SilentlyContinue
                 	        Write-Verbose "2nd Get-ADDomain Result: $result"
 	                    } catch {}
 	
-			            if($result -eq $null)
+			            if ($result -eq $null)
 			                {return $false}
 		            }
                     return $true 
@@ -428,16 +455,23 @@ Configuration xHGS
                         $_HttpsCertificatePassword = ConvertTo-SecureString -AsPlainText "$($using:Node.HttpsCertificatePassword)" –Force
                         $_EncryptionCertificatePassword = ConvertTo-SecureString -AsPlainText "$($using:Node.EncryptionCertificatePassword)" –Force 
                         $_SigningCertificatePassword = ConvertTo-SecureString -AsPlainText "$($using:Node.SigningCertificatePassword)" –Force
-                        if([boolean]::Parse("$($using:Node.GenerateSelfSignedCertificate)"))
+                        if ([boolean]::Parse("$($using:Node.GenerateSelfSignedCertificate)"))
                         {
-                            ### https cert need be imported to root store                      
-                            $httpsCert = Import-PfxCertificate -CertStoreLocation Cert:\LocalMachine\root -FilePath (([string]::Format('\\{0}\{1}', $($using:Node.HgsServerPrimaryIPAddress), $($using:Node.HttpsCertificatePath))).replace(":","$")) -Password $_HttpsCertificatePassword               
+                            if (($httpsCert = Get-ChildItem  Cert:\LocalMachine\root | where {$_.Subject -eq ('CN=' + $_Httpscertname )}) -eq $null)
+                            {         
+                                ### https cert need be imported to root store                    
+                                $httpsCert = Import-PfxCertificate -CertStoreLocation Cert:\LocalMachine\my -FilePath (([string]::Format('\\{0}\{1}', $($using:Node.HgsServerPrimaryIPAddress), $($using:Node.HttpsCertificatePath))).replace(":","$")) -Password $_HttpsCertificatePassword               
+                                $httpsCert = Import-PfxCertificate -CertStoreLocation Cert:\LocalMachine\root -FilePath (([string]::Format('\\{0}\{1}', $($using:Node.HgsServerPrimaryIPAddress), $($using:Node.HttpsCertificatePath))).replace(":","$")) -Password $_HttpsCertificatePassword               
+                            }                    
                         }
                         else
-                        {
-                            ### https cert need be imported to root store
-                            $httpsCert = Import-PfxCertificate -CertStoreLocation Cert:\LocalMachine\root -FilePath $($using:Node.HttpsCertificatePath) -Password $_HttpsCertificatePassword               
-
+                        { 
+                            if (($httpsCert = Get-ChildItem  Cert:\LocalMachine\root | where {$_.Subject -eq ('CN=' + $_Httpscertname )}) -eq $null)
+                            {  
+                                ### https cert need be imported to root store
+                                $httpsCert = Import-PfxCertificate -CertStoreLocation Cert:\LocalMachine\my -FilePath $($using:Node.HttpsCertificatePath) -Password $_HttpsCertificatePassword               
+                                $httpsCert = Import-PfxCertificate -CertStoreLocation Cert:\LocalMachine\root -FilePath $($using:Node.HttpsCertificatePath) -Password $_HttpsCertificatePassword               
+                            }
                         }
                         
                         [System.Security.Cryptography.RSACng] $rsa = [System.Security.Cryptography.X509Certificates.RSACertificateExtensions]::GetRSAPrivateKey($httpsCert)
@@ -453,18 +487,31 @@ Configuration xHGS
                         Initialize-HgsServer -force -Confirm:$false -Http -Https -HgsServerIPAddress $($using:Node.HgsServerPrimaryIPAddress) `
                                                 -HttpPort $($using:Node.HttpPort ) `
                                                 -HttpsPort $($using:Node.HttpsPort ) `
-                                                -HttpsCertificatePath $($using:Node.HttpsCertificatePath) `
-                                                -HttpsCertificatePassword  $_HttpsCertificatePassword 
+                                                -HttpsCertificateThumbprint $httpsCert.thumbprint
  
-						if([boolean]::Parse("$($using:Node.GenerateSelfSignedCertificate)"))
+						if ([boolean]::Parse("$($using:Node.GenerateSelfSignedCertificate)"))
                         {
-                            $encryptionCert = Import-PfxCertificate -CertStoreLocation Cert:\LocalMachine\My -FilePath (([string]::Format('\\{0}\{1}', $($using:Node.HgsServerPrimaryIPAddress), $($using:Node.EncryptionCertificatePath))).replace(":","$")) -Password $_EncryptionCertificatePassword 
-						    $signingCert = Import-PfxCertificate -CertStoreLocation Cert:\LocalMachine\My -FilePath (([string]::Format('\\{0}\{1}', $($using:Node.HgsServerPrimaryIPAddress), $($using:Node.SigningCertificatePath))).replace(":","$")) -Password $_SigningCertificatePassword 
+                            if (($encryptionCert = Get-ChildItem  Cert:\LocalMachine\my | where {$_.Subject -eq ('CN=' + $_encryptioncertname )}) -eq $null)
+                            {                            
+                                $encryptionCert = Import-PfxCertificate -CertStoreLocation Cert:\LocalMachine\My -FilePath (([string]::Format('\\{0}\{1}', $($using:Node.HgsServerPrimaryIPAddress), $($using:Node.EncryptionCertificatePath))).replace(":","$")) -Password $_EncryptionCertificatePassword 
+                            }
+
+                            if (($signingCert = Get-ChildItem  Cert:\LocalMachine\my | where {$_.Subject -eq ('CN=' + $_signingcertname )}) -eq $null)
+                            {                            
+						        $signingCert = Import-PfxCertificate -CertStoreLocation Cert:\LocalMachine\My -FilePath (([string]::Format('\\{0}\{1}', $($using:Node.HgsServerPrimaryIPAddress), $($using:Node.SigningCertificatePath))).replace(":","$")) -Password $_SigningCertificatePassword 
+                            }
                         }
                         else
                         {
-                            $signingCert = Import-PfxCertificate -CertStoreLocation Cert:\LocalMachine\my -FilePath "$($using:Node.SigningCertificatePath)" -Password $_SigningCertificatePassword
-                            $encryptionCert = Import-PfxCertificate -CertStoreLocation Cert:\LocalMachine\my -FilePath "$($using:Node.EncryptionCertificatePath)" -Password $_EncryptionCertificatePassword  
+                            if (($encryptionCert = Get-ChildItem  Cert:\LocalMachine\my | where {$_.Subject -eq ('CN=' + $_encryptioncertname )}) -eq $null)
+                            {                            
+                                $encryptionCert = Import-PfxCertificate -CertStoreLocation Cert:\LocalMachine\my -FilePath "$($using:Node.EncryptionCertificatePath)" -Password $_EncryptionCertificatePassword
+                            }
+
+                            if (($signingCert = Get-ChildItem  Cert:\LocalMachine\my | where {$_.Subject -eq ('CN=' + $_signingcertname )}) -eq $null)
+                            {                            
+                                $signingCert = Import-PfxCertificate -CertStoreLocation Cert:\LocalMachine\my -FilePath "$($using:Node.SigningCertificatePath)" -Password $_SigningCertificatePassword
+                            }
                         }
 
                         [System.Security.Cryptography.RSACng] $rsa = [System.Security.Cryptography.X509Certificates.RSACertificateExtensions]::GetRSAPrivateKey($encryptionCert)
@@ -489,20 +536,50 @@ Configuration xHGS
                 }
                  
                 TestScript = { 
-                    $result = $null
-                    start-sleep -Seconds 300
-                    [System.Reflection.Assembly]::LoadWithPartialName("Microsoft.Windows.HgsStore")
-                    $store = $null
-                    $result = [Microsoft.Windows.HgsStore.HgsReplicatedStore]::TryOpenStore("Attestation", [ref]$store)
-                    Write-Verbose "1st result of HgsReplicatedStore: TryOpenStore: $result"
+                    $result = $true                    
+                    $Urls = @("http://localhost/Attestation/getinfo", "http://localhost/KeyProtection/service/metadata/2014-07/metadata.xml")
+                    
+                    foreach ($url in $Urls)
+                    {
+                        try  
+                        {  
+                            $response = [System.Net.WebRequest]::Create($url).GetResponse(); 
+                            Write-verbose ($url + "Response Status Code: " + $response.StatusCode)    
 
-                    If( $result -eq $false)
+                            if ($response.StatusCode -ne [System.Net.HttpStatusCode]::OK)
+                            {  
+                                $result = $false
+                            }
+                        }  
+                        catch  
+                        {  
+                            $result = $false
+                        }  
+                    }
+
+                    if ($result -eq $false)
                     {
                     	Write-Verbose "Machine may not ready. Wait for 300s, then retrying..."
-	                    start-sleep -Seconds 300
-                        $result = [Microsoft.Windows.HgsStore.HgsReplicatedStore]::TryOpenStore("Attestation", [ref]$store)
-                        Write-Verbose "2nd result of HgsReplicatedStore: TryOpenStore: $result"
-                        If( $result -eq $false)
+	                    start-sleep -Seconds $($using:Node.SleepTime)
+                        $result = $true
+                        foreach ($url in $Urls)
+                        {
+                            try  
+                            {  
+                                $response = [System.Net.WebRequest]::Create($url).GetResponse(); 
+                                Write-verbose ($url + "Response Status Code: " + $response.StatusCode)    
+
+                                if ($response.StatusCode -ne [System.Net.HttpStatusCode]::OK)
+                                {  
+                                    $result = $false
+                                }
+                            }  
+                            catch  
+                            {  
+                                $result = $false
+                            }  
+                        } 
+                        if ($result -eq $false)
                         {
                             Write-verbose "Clearing HGS Server Configurtion from this node"
                             Clear-HgsServer -Force -Confirm:$false #-WarningAction:SilentlyContinue
@@ -512,13 +589,27 @@ Configuration xHGS
                 }
 
                 GetScript = {
-                    $result = $null
-                    [System.Reflection.Assembly]::LoadWithPartialName("Microsoft.Windows.HgsStore")
-                    $store = $null
-                    $result = [Microsoft.Windows.HgsStore.HgsReplicatedStore]::TryOpenStore("Attestation", [ref]$store)
-                    return  @{
-                         Result = $result 
+                    $result = $true                    
+                    $Urls = @("http://localhost/Attestation/getinfo", "http://localhost/KeyProtection/service/metadata/2014-07/metadata.xml")
+                    
+                    foreach ($url in $Urls)
+                    {
+                        try  
+                        {  
+                            $response = [System.Net.WebRequest]::Create($url).GetResponse(); 
+                            Write-verbose ($url + "Response Status Code: " + $response.StatusCode)    
+
+                            if ($response.StatusCode -ne [System.Net.HttpStatusCode]::OK)
+                            {  
+                                $result = $false
+                            }
+                        }  
+                        catch  
+                        {  
+                            $result = $false
+                        }  
                     }
+                    return $result
                  }
             } #End of Initialize-HgsServer
     }#End of Node   
@@ -550,6 +641,7 @@ $ConfigData = @{
             HgsServerPrimaryIPAddress = $HgsServerPrimaryIPAddress;
             HgsServerPrimaryAdminUsername = $HgsServerPrimaryAdminUsername ;
             HgsServerPrimaryAdminPassword = $HgsServerPrimaryAdminPassword ;
+            SleepTime = 300
         }
     );
     NonNodeData = ""   
