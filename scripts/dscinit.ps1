@@ -244,7 +244,6 @@ Configuration xHGS
 
                     if($using:Node.AttestationMode -eq 'TrustActiveDirectory')
                     {
-                        $_HttpsCertificatePassword = (ConvertTo-SecureString $($using:Node.HttpsCertificatePassword) -AsPlainText -Force )
                         Initialize-HgsServer -HgsServiceName $($using:Node.HgsServiceName) -Http -Https -TrustActiveDirectory `
                                             -HttpPort $($using:Node.HttpPort ) `
                                             -HttpsPort $($using:Node.HttpsPort ) `
