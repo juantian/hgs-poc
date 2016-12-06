@@ -116,8 +116,9 @@ Configuration xHGS
 			Script InstallHGSServer
             {
                 SetScript = {
+                     start-transcript -path .\installhgsserver.log -Append -Force
                      write-verbose "HgsDomainName: $($using:Node.HgsDomainName)";
-                     Install-HgsServer -HgsDomainName  $($using:Node.HgsDomainName) -SafeModeAdministratorPassword (ConvertTo-SecureString $($using:Node.SafeModeAdministratorPassword) -AsPlainText -Force) 
+                     Install-HgsServer -HgsDomainName  $($using:Node.HgsDomainName) -SafeModeAdministratorPassword (ConvertTo-SecureString $($using:Node.SafeModeAdministratorPassword) -AsPlainText -Force -Verbose) 
                      ### request reboot machine
                      $global:DSCMachineStatus = 1
                  }
@@ -125,7 +126,7 @@ Configuration xHGS
                 TestScript = { 
                     $result = $null
                     try { 
-                        $result = Get-ADDomain -Current LocalComputer -ErrorAction:SilentlyContinue
+                        $result = Get-ADDomain -Current LocalComputer -ErrorAction:Ignore
                         Write-Verbose "1st Get-ADDomain Result: $result"
                      } catch {}
 
@@ -134,7 +135,7 @@ Configuration xHGS
 			            Write-Verbose "Machine may not ready. Wait for 300s, then retrying..."
 	                    start-sleep -Seconds $($using:Node.SleepTime)
 	                    try { 
-         	                $result = Get-ADDomain -Current LocalComputer -ErrorAction:SilentlyContinue
+         	                $result = Get-ADDomain -Current LocalComputer -ErrorAction:Ignore
                 	        Write-Verbose "2nd Get-ADDomain Result: $result"
 	                    } catch {}
 	
@@ -157,9 +158,10 @@ Configuration xHGS
                DependsOn =  '[Script]InstallHGSServer'
 
                SetScript = {
+                     start-transcript -path .\initializehgsserver.log -Append -Force
                      write-verbose "Initializing HgsServer : $($using:Node.HgsDomainName)";
 
-                     if(!(Get-PSDrive -Name AD -ErrorAction SilentlyContinue)){ New-PSDrive -Name AD -PSProvider ActiveDirectory -Root //RootDSE/ }                 
+                     if(!(Get-PSDrive -Name AD -ErrorAction Ignore)){ New-PSDrive -Name AD -PSProvider ActiveDirectory -Root //RootDSE/ }                 
                      
                      $_HttpsCertificatePassword = ConvertTo-SecureString -AsPlainText "$($using:Node.HttpsCertificatePassword)" –Force
                      $_EncryptionCertificatePassword = ConvertTo-SecureString -AsPlainText "$($using:Node.EncryptionCertificatePassword)" –Force
@@ -252,7 +254,13 @@ Configuration xHGS
                                             -EncryptionCertificatePath  $($using:Node.EncryptionCertificatePath) `
                                             -EncryptionCertificatePassword  $_EncryptionCertificatePassword `
                                             -SigningCertificatePath  $($using:Node.SigningCertificatePath) `
-                                            -SigningCertificatePassword  $_SigningCertificatePassword 
+                                            -SigningCertificatePassword  $_SigningCertificatePassword `
+                                            -Verbose
+                        set-hgsserver -Http -Https -HttpPort $($using:Node.HttpPort ) `
+                                            -HttpsPort $($using:Node.HttpsPort ) `
+                                            -HttpsCertificatePath $($using:Node.HttpsCertificatePath) `
+                                            -HttpsCertificatePassword  $_HttpsCertificatePassword `
+                                            -Confirm:$false -Verbose
                     }
 
                     if($using:Node.AttestationMode -eq 'TrustTpm')
@@ -265,8 +273,15 @@ Configuration xHGS
                                             -EncryptionCertificatePath  $($using:Node.EncryptionCertificatePath) `
                                             -EncryptionCertificatePassword  $_EncryptionCertificatePassword `
                                             -SigningCertificatePath  $($using:Node.SigningCertificatePath) `
-                                            -SigningCertificatePassword  $_SigningCertificatePassword 
-                    }                       
+                                            -SigningCertificatePassword  $_SigningCertificatePassword `
+                                            -Verbose
+                        set-hgsserver -Http -Https -HttpPort $($using:Node.HttpPort ) `
+                                            -HttpsPort $($using:Node.HttpsPort ) `
+                                            -HttpsCertificatePath $($using:Node.HttpsCertificatePath) `
+                                            -HttpsCertificatePassword  $_HttpsCertificatePassword `
+                                            -Confirm:$false -Verbose
+
+                    }                    
                  }
  
                 TestScript = { 
@@ -316,7 +331,7 @@ Configuration xHGS
                         if ($result -eq $false)
                         {
                             Write-verbose "Clearing HGS Server Configurtion from this node"
-                            Clear-HgsServer -Force -Confirm:$false #-WarningAction:SilentlyContinue
+                            Clear-HgsServer -Force -Confirm:$false #-WarningAction:Ignore
                         }
                     }
                     return $result
@@ -386,6 +401,7 @@ Configuration xHGS
                DependsOn = '[script]ChangeDNSAddress'
 
                 SetScript = {
+                     start-transcript -path .\install2ndhgsserver.log -Append -Force
                      write-verbose "HgsDomainName: $($using:Node.HgsDomainName)";
                      Install-HgsServer  -HgsDomainName  $($using:Node.HgsDomainName)  `
                                         -SafeModeAdministratorPassword (ConvertTo-SecureString $($using:Node.SafeModeAdministratorPassword) -AsPlainText -Force) `
@@ -397,7 +413,7 @@ Configuration xHGS
                 TestScript = { 
                     $result = $null
                     try { 
-                        $result = Get-ADDomain -Current LocalComputer -ErrorAction:SilentlyContinue
+                        $result = Get-ADDomain -Current LocalComputer -ErrorAction:Ignore
                         Write-Verbose "1st Get-ADDomain Result: $result"
                      } catch {}
 
@@ -406,7 +422,7 @@ Configuration xHGS
 			            Write-Verbose "Machine may not ready. Wait for 300s, then retrying..."
 	                    start-sleep -Seconds $($using:Node.SleepTime)
 	                    try { 
-         	                $result = Get-ADDomain -Current LocalComputer -ErrorAction:SilentlyContinue
+         	                $result = Get-ADDomain -Current LocalComputer -ErrorAction:Ignore
                 	        Write-Verbose "2nd Get-ADDomain Result: $result"
 	                    } catch {}
 	
@@ -428,6 +444,7 @@ Configuration xHGS
             {
                 DependsOn =  '[Script]InstallHGSServerSecondary'
                 SetScript = {
+                       start-transcript -path .\initialize2ndhgsserver.log -Append -Force
                        $cred = (new-object -typename System.Management.Automation.PSCredential -argumentlist "$($using:Node.HgsDomainName)\$($using:Node.HgsServerPrimaryAdminUsername)", (ConvertTo-SecureString ($($using:Node.HgsServerPrimaryAdminPassword )) -AsPlainText -Force))
                        $sig = @'
                                 [DllImport("advapi32.dll", SetLastError = true)]
@@ -581,7 +598,7 @@ Configuration xHGS
                         if ($result -eq $false)
                         {
                             Write-verbose "Clearing HGS Server Configurtion from this node"
-                            Clear-HgsServer -Force -Confirm:$false #-WarningAction:SilentlyContinue
+                            Clear-HgsServer -Force -Confirm:$false #-WarningAction:Ignore
                         }
                     }
                     return $result
