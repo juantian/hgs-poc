@@ -116,7 +116,7 @@ Configuration xHGS
 			Script InstallHGSServer
             {
                 SetScript = {
-                     start-transcript -path .\installhgsserver.log -Append -Force
+                     start-transcript -path ($using:Node.LogFolder + "\install1sthgsserver.log") -Append -Force
                      write-verbose "HgsDomainName: $($using:Node.HgsDomainName)";
                      Install-HgsServer -HgsDomainName  $($using:Node.HgsDomainName) -SafeModeAdministratorPassword (ConvertTo-SecureString $($using:Node.SafeModeAdministratorPassword) -AsPlainText -Force -Verbose) 
                      ### request reboot machine
@@ -158,7 +158,7 @@ Configuration xHGS
                DependsOn =  '[Script]InstallHGSServer'
 
                SetScript = {
-                     start-transcript -path .\initializehgsserver.log -Append -Force
+                     start-transcript -path ($using:Node.LogFolder + "\initialize1sthgsserver.log") -Append -Force
                      write-verbose "Initializing HgsServer : $($using:Node.HgsDomainName)";
 
                      if(!(Get-PSDrive -Name AD -ErrorAction Ignore)){ New-PSDrive -Name AD -PSProvider ActiveDirectory -Root //RootDSE/ }                 
@@ -401,7 +401,7 @@ Configuration xHGS
                DependsOn = '[script]ChangeDNSAddress'
 
                 SetScript = {
-                     start-transcript -path .\install2ndhgsserver.log -Append -Force
+                     start-transcript -path ($using:Node.LogFolder + "\install2ndhgsserver.log") -Append -Force
                      write-verbose "HgsDomainName: $($using:Node.HgsDomainName)";
                      Install-HgsServer  -HgsDomainName  $($using:Node.HgsDomainName)  `
                                         -SafeModeAdministratorPassword (ConvertTo-SecureString $($using:Node.SafeModeAdministratorPassword) -AsPlainText -Force) `
@@ -444,7 +444,7 @@ Configuration xHGS
             {
                 DependsOn =  '[Script]InstallHGSServerSecondary'
                 SetScript = {
-                       start-transcript -path .\initialize2ndhgsserver.log -Append -Force
+                       start-transcript -path ($using:Node.LogFolder + "\initialize2ndhgsserver.log") -Append -Force
                        $cred = (new-object -typename System.Management.Automation.PSCredential -argumentlist "$($using:Node.HgsDomainName)\$($using:Node.HgsServerPrimaryAdminUsername)", (ConvertTo-SecureString ($($using:Node.HgsServerPrimaryAdminPassword )) -AsPlainText -Force))
                        $sig = @'
                                 [DllImport("advapi32.dll", SetLastError = true)]
@@ -503,7 +503,12 @@ Configuration xHGS
                         Initialize-HgsServer -force -Confirm:$false -Http -Https -HgsServerIPAddress $($using:Node.HgsServerPrimaryIPAddress) `
                                                 -HttpPort $($using:Node.HttpPort ) `
                                                 -HttpsPort $($using:Node.HttpsPort ) `
-                                                -HttpsCertificateThumbprint $httpsCert.thumbprint
+                                                -HttpsCertificateThumbprint $httpsCert.thumbprint -Verbose
+
+                        set-hgsserver -Http -Https -HttpPort $($using:Node.HttpPort ) `
+                                                -HttpsPort $($using:Node.HttpsPort ) `
+                                                -HttpsCertificateThumbprint $httpsCert.thumbprint `
+                                                -Confirm:$false -Verbose
  
 						if ([boolean]::Parse("$($using:Node.GenerateSelfSignedCertificate)"))
                         {
@@ -658,6 +663,8 @@ $ConfigData = @{
             HgsServerPrimaryAdminUsername = $HgsServerPrimaryAdminUsername ;
             HgsServerPrimaryAdminPassword = $HgsServerPrimaryAdminPassword ;
             SleepTime = 300
+            LogFolder = (gwmi Win32_OperatingSystem).WindowsDirectory + "\Logs\HgsServer";
+
         }
     );
     NonNodeData = ""   
